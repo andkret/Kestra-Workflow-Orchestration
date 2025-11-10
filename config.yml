@@ -1,0 +1,27 @@
+configurations:
+  application:
+    kestra:
+      repository:
+        type: h2
+      storage:
+        type: gcs
+        gcs:
+          bucket: com-my-company-kestra-demo
+          projectId: kestra-demo-ID
+      queue:
+        type: h2
+common:
+  extraVolumes:
+    - name: gcp-credentials
+      secret:
+        secretName: gcp-credentials
+  extraVolumeMounts:
+    - name: gcp-credentials
+      mountPath: /gcp
+      readOnly: true
+  extraEnv:
+    - name: GOOGLE_APPLICATION_CREDENTIALS
+      value: /gcp/key.json
+  extraEnvFrom:
+    - secretRef:
+        name: kestra-secrets
