@@ -1121,7 +1121,7 @@ Click "Execute".
 
 If there were no errors, go to your namespace and check the `Files` menu. You should see the synced files (see screenshot below):
 
-![Synced namespace files](/images/synced-namespace-files.png)
+![Synced namespace files](/images/synced-tenantsync-files.png)
 
 Now the file can be used in other flows and synced when changes happen.
 
