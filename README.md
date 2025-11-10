@@ -1083,8 +1083,8 @@ We've already created this structure:
 - `dev.testing/files/process_orders.py` - Project-specific file
 - `common/files/validator.py` - Shared utility
 
-[!NOTE]
-TenantSync may require Kestra Enterprise Edition. If the task type is not recognized, that's expected for the open-source version.
+> [!NOTE]
+> TenantSync may require Kestra Enterprise Edition. If the task type is not recognized, that's expected for the open-source version.
 
 #### Create the TenantSync Flow
 In Kestra UI, create a new flow in the `system` namespace:
