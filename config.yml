@@ -6,7 +6,7 @@ configurations:
       storage:
         type: gcs
         gcs:
-          bucket: com-my-company-kestra-demo
+          bucket: com-mycompany-kestra-demo
           projectId: kestra-demo-ID
       queue:
         type: h2

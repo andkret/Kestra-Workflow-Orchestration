@@ -1,6 +1,6 @@
 # Kestra Demo Project
 
-In this section, we'll set up Kestra on our local machines, connect it to GCP, run some Python and Java code and push the changes to GitHub.
+In this section, we'll set up Kestra on our local machines, connect it to GCP, run some Python and Java code. Additionally, we will set up a sync between GitHub and Kestra and use Subflows to make our flows more modular.
 
 ## Prerequisites
 
@@ -19,6 +19,9 @@ In order to install Kestra locally, we need to do the following steps:
 1. Access Kestra UI
 
 If you have already set some of those things up, feel free to skip.
+
+> [!NOTE]
+> The following documentation uses Helm (v3.19.0), Minikube (v1.37.0), and Kestra (1.0.8).
 
 ### Install Minikube
 
@@ -63,7 +66,7 @@ In order to add the Kestra helm repository, run the following command:
 
 The installation, however, cannot be started yet. You first need to create a configuration.
 
-Create a directory for your demo project (e.g. `/kestra`) and create a single file `config.yml` (every other name should work as well).
+Create a directory for your demo project (e.g. `/kestra`) and create a single file `config.yml` (the name does not matter, in Kestra you also often see `values.yaml`).
 
 Add the following code to the file:
 
@@ -136,6 +139,9 @@ If you already have a GCP account and project skip ahead. If not, here's what yo
 > [!NOTE]
 > You need to provide a payment method in this step. 
 
+> [!IMPORTANT]
+> Be aware that queries against GCP can incur costs. Check twice before running queries. 
+
 ### Install GCP CLI
 
 If you have the GCP CLI already installed, you can skip this command.
@@ -168,7 +174,7 @@ gcloud services enable bigquery.googleapis.com
 > Replace 'kestra-storage-yourname-2025' with something unique (bucket names are global).
 
 ```bash
-gsutil mb -l europe-west3 gs://com-my-company-kestra-demo/
+gsutil mb -l europe-west3 gs://com-mycompany-kestra-demo/
 ```
 
 Verify if it was created, via:
@@ -177,7 +183,7 @@ gsutil ls
 ```
 
 > [!NOTE]
-> Bucket names must be globally unique across all of GCP, so a reverse domain identifier with dashes combined with the project name makes sense (e.g. `gs://com-my-company-kestra-demo`).
+> Bucket names must be globally unique across all of GCP, so a reverse domain identifier with dashes combined with the project name makes sense (e.g. `gs://com-mycompany-kestra-demo`).
 
 ### Create a BigQuery Dataset (for testing)
 
@@ -214,6 +220,9 @@ gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:kest
 ```bash
 gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:kestra-sa@${PROJECT_ID}.iam.gserviceaccount.com" --role="roles/storage.admin"
 ```
+
+> [!IMPORTANT]
+> For production, these permissions are maybe too broad. Consider not using the `bigquery.admin` and `storage.admin` role. 
 
 ### Generate and Download the JSON Key
 
@@ -264,7 +273,7 @@ configurations:
       storage:
         type: gcs
         gcs:
-          bucket: com-my-company-kestra-demo # Use YOUR bucket name
+          bucket: com-mycompany-kestra-demo # Use YOUR bucket name
           projectId: kestra-demo # Use YOUR project ID
       queue:
         type: h2
@@ -346,17 +355,17 @@ tasks:
   - id: upload_to_gcs
     type: io.kestra.plugin.gcp.gcs.Upload
     from: "{{ outputs.create_and_upload.outputFiles['hello.txt'] }}"
-    to: "gs://com-my-company-kestra-demo/test/hello.txt"
+    to: "gs://com-mycompany-kestra-demo/test/hello.txt"
 ```
 > [!IMPORTANT]
-> Replace `com-my-company-kestra-demo` with YOUR actual bucket name from earlier!
+> Replace `com-mycompany-kestra-demo` with YOUR actual bucket name from earlier!
 
 Click 'Save' and 'Execute'. 
 
 After a successful run (indicated by green progress bars), run the following command (again replace with YOUR actual bucket name):
 
 ```bash
-gsutil cat gs://com-my-company-kestra-demo/test/hello.txt
+gsutil cat gs://com-mycompany-kestra-demo/test/hello.txt
 ```
 
 This should output:
@@ -364,13 +373,15 @@ This should output:
 
 ## Run Code in Kestra
 
-Kestra is very versatile and langauge-agnostic. Thanks to its Docker-in-Docker (DinD) approach, it allows you to write your business logic with your preferred language and run it in a Docker container.
+Kestra is very versatile and langauge-agnostic. It allows you to write your business logic with your preferred language and run it in a Docker container.
 
 ### Run Python Code in Kestra
 
 In the previous section, we've already built a simple task that runs Python code in Kestra which basically uses a container through `io.kestra.plugin.scripts.python.Script`.
 
 There are different ways to run Python code in Kestra. We will show two of them and how to exchange data between tasks.
+
+More info about [Python in Kestra](https://kestra.io/docs/how-to-guides/python).
 
 #### Option 1: Simple Inline Python Script
 
@@ -542,7 +553,6 @@ tasks:
 
 The outputs will show both tasks and their respective `outputFiles`.
 
-
 ### Run Java Code in Kestra
 
 Similar to Python, there are multiple ways available to run Java code.
@@ -674,12 +684,12 @@ Here is what you need:
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
+                <version>3.13.0</version>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>3.1.0</version>
+                <version>3.5.0</version>
                 <configuration>
                     <mainClass>com.example.DataProcessor</mainClass>
                 </configuration>
@@ -774,30 +784,36 @@ Kestra can automatically sync your code from Git repositories like GitHub, keepi
 ### Understanding Git Sync in Kestra
 Kestra offers two main approaches for syncing code from Git repositories:
 
-__NamespaceSync__ - Syncs files to a specific namespace
+#### NamespaceSync - Project-Specific Code Sync
 
-- Best for: Project-specific code, team-level resources
-- Use when: Different teams manage different projects
-- Scope: Files are only available within the specified namespace
-- Example: Your data engineering team's Python ETL scripts
+Syncs files from a single Git directory to a specific namespace.
 
-__TenantSync__ - Syncs files across all namespaces in your tenant
+- **Best for:** Team-specific code, isolated projects.
+- **Use when:** You want simple, focused syncing for one team/project.
+- **Git structure:** Flat directory structure (e.g., `data-processing/`).
+- **Scope:** Files are only available within the target namespace.
+- **Example:** Your data engineering team's Python ETL scripts in `dev.testing` namespace.
+- **Authentication:** Uses Git credentials only.
 
-- Best for: Shared utilities, common libraries, organization-wide resources
-- Use when: You have code that multiple teams/projects need to use
-- Scope: Files are available to all namespaces
-- Example: Company-wide data validation functions, shared configuration files
+**When to use:** You have a simple project where all code belongs to one team/namespace.
 
+#### TenantSync - Multi-Namespace Code Distribution
 
+Syncs files and flows from a structured Git repository to multiple namespaces simultaneously.
 
+- **Best for:** Organization-wide code distribution, shared utilities.
+- **Use when:** You need to distribute code across multiple namespaces from a single source.
+- **Git structure:** Namespace-based directory structure (e.g., `<namespace>/files/`, `<namespace>/flows/`).
+- **Scope:** Syncs to ALL namespaces found in your Git repository structure.
+- **Example:** Shared validation libraries in `common/files/` → `common` namespace, team-specific code in `dev.testing/files/` → `dev.testing` namespace.
+- **Authentication:** Requires both Git credentials AND Kestra API credentials.
 
+**When to use:** You have multiple teams/namespaces and want centralized GitOps management of all code.
 
-[!NOTE]
-We'll set up both to demonstrate the difference. TenantSync may require Enterprise Edition - if it doesn't work in your setup, that's expected and we'll note it.
+> [!IMPORTANT]
+> **Key Difference:** NamespaceSync is simpler and syncs one directory to one namespace. TenantSync reads your entire repository structure and creates/updates files in multiple namespaces based on the folder names. It distributes files to their respective namespaces based on your Git folder structure.
 
-
-
-
+👉 More info about [TenantSync and NamespaceSync](https://kestra.io/docs/version-control-cicd/git#git-tenantsync-and-namespacesync).
 
 ### Prerequisites
 Before starting, ensure you have:
@@ -961,7 +977,6 @@ If you use the open-source option, do the following:
 > [!DANGER]
 > Make sure to put the `.env` and `.env_encoded` files into your `.gitignore` file.
 
-
 1. Create an environment file (`.env`) with this content:
 ```
 GITHUB_TOKEN=[YOUR_GITHUB_PERSONAL_ACCESS_TOKEN]
@@ -995,6 +1010,9 @@ kubectl describe secret kestra-secrets
     - secretRef:
         name: kestra-secrets
 ```
+
+👉 More info about [secrets in the open source version](https://kestra.io/docs/concepts/secret#secrets-in-the-open-source-version).
+
 ### Step 5: Upgrade Kestra
 Run this (or uninstall and recreate Kestra as described before):
 ```bash
@@ -1003,6 +1021,7 @@ helm upgrade kestra kestra/kestra -f config.yml
 kubectl get pods -l app.kubernetes.io/name=kestra -w
 ```
 Wait for `2/2 Running`.
+
 ### Set Up NamespaceSync (Project-Specific Code)
 Let's sync the data-processing folder to a specific namespace.
 
@@ -1045,6 +1064,8 @@ Now the file can be used in other flows.
 #### Update Your Code
 
 Do a small change to `process_sales.py` like adding an additional print-statement. Commit and push the changes and wait for 15 minutes or manually trigger the flow and the file stored in the namespace should also be updated.
+
+👉 More info about [NamespaceSync](https://kestra.io/plugins/plugin-git/io.kestra.plugin.git.namespacesync).
 
 ### Set up TenantSync
 TenantSync synchronizes files and flows across ALL namespaces in your tenant. Unlike NamespaceSync, it requires API authentication and expects a specific folder structure.
@@ -1107,6 +1128,8 @@ If there were no errors, go to your namespace and check the `Files` menu. You sh
 
 Now the file can be used in other flows and synced when changes happen.
 
+👉 More info about [TenantSync](https://kestra.io/plugins/plugin-git/io.kestra.plugin.git.tenantsync).
+
 ## Reusable Flows with Subflows
 
 Another feature of Kestra are Subflows. Often core business logic needs to be repeated in several places which would require us to break the DRY (Don't repeat yourself) principle. It'd be harder to maintain since a change to the logic needs to be made in several places.
@@ -1162,5 +1185,17 @@ A few things to note here:
 
 👉 More info about [Subflows](https://kestra.io/docs/workflow-components/subflows). 
 
+## Clean up
 
+In order to clean up the changes, run the following commands:
+
+```bash
+helm uninstall kestra
+minikube delete
+gsutil -m rm -r gs://your-bucket-name
+gcloud projects delete $PROJECT_ID
+```
+
+> [!NOTE]
+> Replace `your-bucket-name` with your actual GCP bucket name.
 
