@@ -974,7 +974,7 @@ Scopes: Check `repo` (Full control of private repositories)
 
 If you use the open-source option, do the following:
 
-> [!DANGER]
+> [!CAUTION]
 > Make sure to put the `.env` and `.env_encoded` files into your `.gitignore` file.
 
 1. Create an environment file (`.env`) with this content:
