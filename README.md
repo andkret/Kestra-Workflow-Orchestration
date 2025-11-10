@@ -490,7 +490,7 @@ tasks:
 
 ### Exchange Data Between Tasks
 
-The tasks we looked at so far were one step tasks. However, you may want to chain multiple small modular tasks that run sequentially. That often requires to share data between these tasks.
+The flows we looked at so far had a single tasks. However, you may want to chain multiple small modular tasks that run sequentially. That often requires to share data between these tasks.
 
 Here is an example that shares data between two tasks:
 ```yaml
