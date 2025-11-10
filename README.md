@@ -381,7 +381,7 @@ In the previous section, we've already built a simple task that runs Python code
 
 There are different ways to run Python code in Kestra. We will show two of them and how to exchange data between tasks.
 
-More info about [Python in Kestra](https://kestra.io/docs/how-to-guides/python).
+👉 More info about [Python in Kestra](https://kestra.io/docs/how-to-guides/python).
 
 #### Option 1: Simple Inline Python Script
 
