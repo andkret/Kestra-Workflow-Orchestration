@@ -643,7 +643,7 @@ tasks:
       - cat output.txt
 ```
 
-This code will write one line for each of names to a file `output.txt`. 
+This code will write one line for each name to a file `output.txt`. 
 
 #### Option 3: Maven Project
 
