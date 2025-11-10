@@ -171,7 +171,7 @@ gcloud services enable bigquery.googleapis.com
 ### Create a GCS Bucket
 
 > [!NOTE]
-> Replace 'kestra-storage-yourname-2025' with something unique (bucket names are global).
+> Replace 'com-mycompany-kestra-demo' with something unique (bucket names are global).
 
 ```bash
 gsutil mb -l europe-west3 gs://com-mycompany-kestra-demo/
