@@ -30,6 +30,7 @@ Minikube serves as an easy local setup for Kubernetes (k8s).
 Follow the steps in the [official installation guide](https://minikube.sigs.k8s.io/docs/start/) for your operating system, architecture and installer type.
 
 ### Install Kubernetes tools (kubectl)
+(This actually got installed with Minikube for me -Andreas)
 
 Access the [official docs](https://kubernetes.io/docs/tasks/tools/) to get the most up to date setup steps for your operating system.
 
@@ -86,10 +87,17 @@ configurations:
 
 This will set the Kestra server URL to `localhost` on the port `8080`.
 
+Create a quick dummy variable for GCP otherwise Kestra will not start (think we don't need that actually. I used the large config file. That was the problem)
+``` bash
+kubectl create secret generic gcp-credentials --from-literal=dummy="{}"
+kubectl create secret generic kestra-secrets --from-literal=dummy="{}"
+
+```
+
 Then navigate to the aforementioned directory in the command line and run:
 
   ``` bash
-  helm install kestra kestra/kestra -f config.yml
+  helm install kestra kestra/kestra -f config_simple.yml
   ```
 
 The output should look similar to this:
@@ -117,14 +125,18 @@ Lastly, you need to forward the port from the pod to your local machine via:
   kubectl port-forward svc/kestra 8080:8080
   ```
 
+UPDATE:
+Just do this command and keep the cli open:
+
+  ``` bash
+  minikube service kestra
+  ```
+
 ### Access Kestra UI
 
-In your browser, navigate to http://localhost:8080. This should open the Kestra UI like this:
+Use the IP and Port that minikube service kestra shows
 
 ![Started Kestra UI](/images/kestra-ui.png)
-
-> [!WARNING]
-> Make sure the provided ports are available. By default, Kestra uses 8080 and 8081.
 
 ## Connect Kestra to GCP
 
@@ -142,7 +154,7 @@ If you already have a GCP account and project skip ahead. If not, here's what yo
 > [!IMPORTANT]
 > Be aware that queries against GCP can incur costs. Check twice before running queries. 
 
-### Install GCP CLI
+### Install GCP CLI MAC
 
 If you have the GCP CLI already installed, you can skip this command.
 
@@ -157,6 +169,18 @@ During `gcloud init`, it will:
 
 - Ask you to log in with your Google account
 - Ask you to select or create a project (use the actual name of the project - in our case 'kestra-demo').
+
+### Install GCP CLI WSL2
+```bash
+sudo apt update && sudo apt install apt-transport-https ca-certificates gnupg
+
+echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" \
+  | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+
+curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo tee /usr/share/keyrings/cloud.google.gpg > /dev/null
+
+sudo apt update && sudo apt install google-cloud-sdk
+
 
 ### Enable required APIs
 

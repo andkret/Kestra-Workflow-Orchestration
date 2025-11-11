@@ -1,0 +1,11 @@
+configurations:
+  application:
+    kestra:
+      repository:
+        type: h2
+      storage:
+        type: local
+        local:
+          basePath: /tmp/kestra/storage
+      queue:
+        type: h2

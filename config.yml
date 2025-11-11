@@ -10,6 +10,7 @@ configurations:
           projectId: kestra-demo-ID
       queue:
         type: h2
+
 common:
   extraVolumes:
     - name: gcp-credentials
