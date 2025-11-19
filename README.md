@@ -1006,18 +1006,8 @@ If you use the open-source option, do the following:
 GITHUB_TOKEN=[YOUR_GITHUB_PERSONAL_ACCESS_TOKEN]
 KESTRA_USER=[YOUR_KESTRA_USER]
 KESTRA_PASSWORD=[YOUR_KESTRA_PASSWORD]
-
 ```
-Keep the last line free for the following script to work.
-
-KESTRA_USER and KESTRA_PASSWORD will be needed for the API of the TenantSync. KESTRA_USER is the email of your account.
-
-2. Run the following command in your terminal:
-```bash
-while IFS='=' read -r key value; do
-    echo "SECRET_$key=$(echo -n "$value" | base64)";
-done < .env > .env_encoded
-```
+2. Use the encode_secrets.sh file to create a base64 encoded secrets file.
 You should see an `.env_encoded` file which contains the base64 encoded secret.
 
 3. Create a Kubernetes Secret from your `.env_encoded` file with this command:
@@ -1040,7 +1030,7 @@ kubectl describe secret kestra-secrets
 ### Step 5: Upgrade Kestra
 Run this (or uninstall and recreate Kestra as described before):
 ```bash
-helm upgrade kestra kestra/kestra -f config.yml
+helm upgrade kestra kestra/kestra -f config_github.yml
 
 kubectl get pods -l app.kubernetes.io/name=kestra -w
 ```
@@ -1059,7 +1049,7 @@ tasks:
     type: io.kestra.plugin.git.SyncNamespaceFiles
     gitDirectory: data-processing
     namespace: dev.testing
-    url: https://github.com/YOUR-USERNAME/kestra-git-demo.git
+    url: https://github.com/YOUR-USERNAME/kestra-demo.git
     branch: main
     username: YOUR-USERNAME
     password: "{{ secret('GITHUB_TOKEN') }}"
@@ -1090,6 +1080,12 @@ Now the file can be used in other flows.
 Do a small change to `process_sales.py` like adding an additional print-statement. Commit and push the changes and wait for 15 minutes or manually trigger the flow and the file stored in the namespace should also be updated.
 
 👉 More info about [NamespaceSync](https://kestra.io/plugins/plugin-git/io.kestra.plugin.git.namespacesync).
+
+
+### Show that the deletion of files also works 
+
+Add this line below the password in the flow's task. It'll remove everything else from the namespace :D
+``` delete: true ```
 
 ### Set up TenantSync
 TenantSync synchronizes files and flows across ALL namespaces in your tenant. Unlike NamespaceSync, it requires API authentication and expects a specific folder structure.

@@ -22,3 +22,7 @@ common:
   extraEnv:
     - name: GOOGLE_APPLICATION_CREDENTIALS
       value: /gcp/key.json
+
+  extraEnvFrom:
+    - secretRef:
+        name: kestra-secrets
