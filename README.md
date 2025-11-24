@@ -317,8 +317,9 @@ common:
 
 ### Upgrade Kestra
 
-```bash
-helm upgrade kestra kestra/kestra -f config.yml
+```bashh
+--> Don't use this one --> helm upgrade kestra kestra/kestra -f config.yml
+helm upgrade --install kestra ./my-kestra
 
 kubectl get pods -l app.kubernetes.io/name=kestra -w
 ```
@@ -1201,6 +1202,87 @@ A few things to note here:
 - In the example, if the referenced subflow fails, the parent flow will also stop working (see `transmitFailed`). This can be changed, if later tasks don't require the previous flows to succeed. However, if set to true, then you also need `wait` to be set to true.
 
 👉 More info about [Subflows](https://kestra.io/docs/workflow-components/subflows). 
+
+
+## Create transformation from GCS to BigQuery - raw to clean
+
+Create the BigQuery Datasets
+```bash
+bq --location=EU mk --dataset kestra-workspace-ak-lde-2025:raw
+
+bq --location=EU mk --dataset kestra-workspace-ak-lde-2025:clean
+```
+
+## Create the script that reads from GCS and write into BigQuery
+
+```yml
+id: ecommerce_ingest_and_clean_with_errors
+namespace: gcp.ecommerce
+
+variables:
+  projectId: "kestra-workspace-ak-lde-2025"
+  input_bucket: "lde-my-kestra-workspace"
+  location: "EU"
+
+tasks:
+  # --- 1. Load RAW data from GCS into BigQuery ---
+  - id: load_raw
+    type: io.kestra.plugin.gcp.bigquery.LoadFromGcs
+    from:
+      - "gs://{{ vars.input_bucket }}/data.csv"
+    destinationTable: "{{ vars.projectId }}.raw.transactions_raw"
+    format: CSV
+    autodetect: true
+    csvOptions:
+      skipLeadingRows: 1
+    writeDisposition: WRITE_TRUNCATE
+
+  # --- 2. CLEAN table: cast only important fields + business rules ---
+  - id: clean_data
+    type: io.kestra.plugin.gcp.bigquery.Query
+    projectId: "{{ vars.projectId }}"
+    location: "{{ vars.location }}"
+    sql: |
+      CREATE OR REPLACE TABLE `{{ vars.projectId }}.clean.transactions` AS
+      SELECT
+        InvoiceNo,
+        StockCode,
+        Description,
+        SAFE_CAST(Quantity AS INT64) AS Quantity,
+        SAFE_CAST(UnitPrice AS FLOAT64) AS UnitPrice,
+        SAFE_CAST(InvoiceDate AS TIMESTAMP) AS InvoiceDate,
+        CustomerID,
+        Country
+      FROM `{{ vars.projectId }}.raw.transactions_raw`
+      WHERE SAFE_CAST(Quantity AS INT64) > 0
+        AND SAFE_CAST(UnitPrice AS FLOAT64) > 0
+        AND InvoiceNo NOT LIKE 'C%';
+
+  # --- 3. ERROR table: everything that failed clean conditions ---
+  - id: error_data
+    type: io.kestra.plugin.gcp.bigquery.Query
+    projectId: "{{ vars.projectId }}"
+    location: "{{ vars.location }}"
+    sql: |
+      CREATE OR REPLACE TABLE `{{ vars.projectId }}.clean.transactions_errors` AS
+      SELECT *
+      FROM `{{ vars.projectId }}.raw.transactions_raw`
+      WHERE NOT (
+        SAFE_CAST(Quantity AS INT64) > 0
+        AND SAFE_CAST(UnitPrice AS FLOAT64) > 0
+        AND InvoiceNo NOT LIKE 'C%'
+      );
+```
+
+## Download larger dataset
+
+[NYC Yellow Cab Dataset](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page)
+
+
+Create the BigQuery Datasets
+```bash
+bq --location=EU mk --dataset kestra-workspace-ak-lde-2025:yellow-cab
+```
 
 ## Clean up
 

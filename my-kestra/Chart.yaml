@@ -1,0 +1,4 @@
+apiVersion: v2
+name: kestra
+version: 0.1.0
+type: application
