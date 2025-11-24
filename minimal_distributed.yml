@@ -1,0 +1,65 @@
+# ------------------------------------------------------------------------------
+# REQUIRED for Helm Chart validation — must not be empty
+# ------------------------------------------------------------------------------
+configurations:
+  application: |
+    kestra:
+      server:
+        type: SERVER
+      repository:
+        type: postgres
+      queue:
+        type: redis
+      storage:
+        type: gcs
+
+# ------------------------------------------------------------------------------
+# REAL CONFIG (actually applied to Kestra)
+# ------------------------------------------------------------------------------
+kestra:
+  server:
+    type: SERVER
+
+  repository:
+    type: postgres
+    postgres:
+      url: jdbc:postgresql://postgres-postgresql.default.svc.cluster.local:5432/kestra
+      username: kestra
+      password: kestra
+
+  queue:
+    type: redis
+    redis:
+      host: redis-master.default.svc.cluster.local
+      port: 6379
+
+  storage:
+    type: gcs
+    gcs:
+      bucket: lde-my-kestra-workspace
+      projectId: kestra-workspace-ak-lde-2025
+
+executor:
+  replicas: 1
+
+worker:
+  replicas: 3
+
+common:
+  extraVolumes:
+    - name: gcp-credentials
+      secret:
+        secretName: gcp-credentials
+
+  extraVolumeMounts:
+    - name: gcp-credentials
+      mountPath: /gcp
+      readOnly: true
+
+  extraEnv:
+    - name: GOOGLE_APPLICATION_CREDENTIALS
+      value: /gcp/key.json
+
+  extraEnvFrom:
+    - secretRef:
+        name: kestra-secrets

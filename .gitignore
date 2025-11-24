@@ -1,2 +1,3 @@
 # Ignore GCP service account keys
 kestra-gcp-key.json
+.env*

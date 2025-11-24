@@ -1281,8 +1281,92 @@ tasks:
 
 Create the BigQuery Datasets
 ```bash
-bq --location=EU mk --dataset kestra-workspace-ak-lde-2025:yellow-cab
+bq --location=EU mk --dataset kestra-workspace-ak-lde-2025:YellowCab
 ```
+
+
+Flow to cretae the processing (not working yet)
+
+```bash
+id: yellow_cab_ingest_raw
+namespace: gcp.yellowcab
+
+variables:
+  bucket: "lde-my-kestra-workspace"
+
+tasks:
+  - id: list_files
+    type: io.kestra.plugin.gcp.gcs.List
+    from: "gs://{{ vars.bucket }}/yellow-cab/"
+
+  - id: dump_blobs
+    type: io.kestra.plugin.core.debug.Return
+    format: |
+      OUTPUT BLOBS:
+      {{ outputs.list_files.blobs }}
+
+  - id: foreach_file
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ outputs.list_files.blobs }}"
+    tasks:
+      - id: load
+        runIf: "{{ taskrun.value | jq('.directory') | first == false}}"
+        type: io.kestra.plugin.gcp.bigquery.LoadFromGcs
+        from:
+          - "{{ taskrun.value | jq('.uri') | first }}"
+        destinationTable: "kestra-workspace-ak-lde-2025.YellowCab.raw_data"
+        format: PARQUET
+        location: "EU"
+        writeDisposition: WRITE_APPEND
+
+```
+
+
+My old load_single_file flow
+```bash
+id: load_single_file
+namespace: gcp.yellowcab
+
+inputs:
+  - id: file_uri
+    type: STRING
+
+tasks:
+  - id: load
+    type: io.kestra.plugin.gcp.bigquery.LoadFromGcs
+    from:
+      - "{{ inputs.file_uri }}"
+    destinationTable: "kestra-workspace-ak-lde-2025.YellowCab.trips"
+    format: PARQUET
+    location: "EU"
+    writeDisposition: WRITE_APPEND
+
+```
+
+```
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo update
+```
+
+```
+helm install postgres bitnami/postgresql \
+  --set auth.username=kestra \
+  --set auth.password=kestra \
+  --set auth.database=kestra
+```
+```
+helm install redis bitnami/redis \
+  --set architecture=standalone \
+  --set auth.enabled=false
+```
+
+```
+helm install kestra kestra/kestra -f config_github.yml
+helm upgrade --install kestra kestra/kestra-distributed -f minimal_distributed.yml
+```
+
+
+
 
 ## Clean up
 
