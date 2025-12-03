@@ -1598,6 +1598,173 @@ tasks:
 ```
 
 
+## Error handling main 
+
+```
+id: yellow_cab_retry_main
+namespace: gcp.yellowcab
+
+variables:
+  bucket: "lde-my-kestra-workspace"
+  dataset: "yc_retry"
+  project: "kestra-workspace-ak-lde-2025"
+  location: "EU"
+
+tasks:
+
+  - id: list_files
+    type: io.kestra.plugin.gcp.gcs.List
+    from: "gs://{{ vars.bucket }}/yc-retry/data/"
+    serviceAccount: "{{ secret('GCP_SERVICE_ACCOUNT') }}"
+
+  - id: foreach_file
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ outputs.list_files.blobs }}"
+    tasks:
+
+      - id: process_one_file
+        type: io.kestra.plugin.core.flow.Sequential
+        runIf: "{{ taskrun.value | jq('.size') | first > 0 }}"
+        tasks:
+
+          # Only process real files
+          - id: raw_load
+            type: io.kestra.plugin.gcp.bigquery.LoadFromGcs
+            #runIf: "{{ taskrun.value | jq('.size') | first > 0 }}"
+            serviceAccount: "{{ secret('GCP_SERVICE_ACCOUNT') }}"
+            from:
+              - "{{ parent.taskrun.value | jq('.uri') | first }}"
+            destinationTable: "{{ vars.project }}.{{ vars.dataset }}.raw_stage"
+            format: CSV
+            autodetect: true
+            csvOptions:
+              skipLeadingRows: 1
+            writeDisposition: WRITE_TRUNCATE
+            location: "{{ vars.location }}"
+            
+
+          # Run the retry subflow (strict + soft)
+          - id: retry_cleaning
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace: gcp.yellowcab
+            flowId: yellow_cab_retry_subflow
+            wait: true
+            inputs:
+              file_name: "{{ parent.taskrun.value | jq('.name') | first | split('/') | last }}"
+            #runIf: "{{ taskrun.value | jq('.size') | first > 0 }}"
+
+          - id: copy_to_archive
+            type: io.kestra.plugin.gcp.gcs.Copy
+            serviceAccount: "{{ secret('GCP_SERVICE_ACCOUNT') }}"
+            from: "{{ parent.taskrun.value | jq('.uri') | first }}"
+            to: "gs://{{ vars.bucket }}/yc-retry/archive/{{ parent.taskrun.value | jq('.name') | first | split('/') | last }}"
+            #runIf: "{{ taskrun.value | jq('.size') | first > 0 }}"
+
+          - id: delete_original_success
+            type: io.kestra.plugin.gcp.gcs.Delete
+            serviceAccount: "{{ secret('GCP_SERVICE_ACCOUNT') }}"
+            uri: "{{ parent.taskrun.value | jq('.uri') | first }}"
+            #runIf: "{{ taskrun.value | jq('.size') | first > 0 }}"  
+          
+        errors:
+          - id: debug_error_ctx
+            type: io.kestra.plugin.core.debug.Return
+            format: |
+              ==== DEBUG ERROR CONTEXT ====
+              taskrun: {{ taskrun | json }}
+              parent.taskrun: {{ taskrun | json }}
+          
+          - id: copy_to_error
+            type: io.kestra.plugin.gcp.gcs.Copy
+            serviceAccount: "{{ secret('GCP_SERVICE_ACCOUNT') }}"
+            from: "{{ parent.taskrun.value | jq('.uri') | first }}"
+            to: "gs://{{ vars.bucket }}/yc-retry/errors/{{ parent.taskrun.value | jq('.name') | first | split('/') | last }}"
+
+          - id: delete_original_failed
+            type: io.kestra.plugin.gcp.gcs.Delete
+            serviceAccount: "{{ secret('GCP_SERVICE_ACCOUNT') }}"
+            uri: "{{ parent.taskrun.value | jq('.uri') | first }}"
+```
+## Error handling subtask
+
+```
+id: yellow_cab_retry_subflow
+namespace: gcp.yellowcab
+
+variables:
+  project: "kestra-workspace-ak-lde-2025"
+  dataset: "yc_retry"
+  location: "EU"
+
+inputs:
+  - id: file_name
+    type: STRING
+
+tasks:
+
+  # ---------------------------------------------------------
+  # ATTEMPT 1: STRICT CLEANING
+  # ---------------------------------------------------------
+  - id: cleaning_stage_strict
+    type: io.kestra.plugin.gcp.bigquery.Query
+    serviceAccount: "{{ secret('GCP_SERVICE_ACCOUNT') }}"
+    projectId: "{{ vars.project }}"
+    location: "{{ vars.location }}"
+    sql: |
+      CREATE OR REPLACE TABLE `{{ vars.project }}.{{ vars.dataset }}.cleaning_stage` AS
+      SELECT
+        CAST(VendorID AS INT64) AS VendorID,
+        TIMESTAMP(tpep_pickup_datetime) AS tpep_pickup_datetime,
+        TIMESTAMP(tpep_dropoff_datetime) AS tpep_dropoff_datetime,
+        SAFE_CAST(passenger_count AS INT64) AS passenger_count,
+        SAFE_CAST(trip_distance AS FLOAT64) AS trip_distance,
+        SAFE_CAST(total_amount AS FLOAT64) AS total_amount
+      FROM `{{ vars.project }}.{{ vars.dataset }}.raw_stage`
+      WHERE SAFE_CAST(passenger_count AS INT64) IS NOT NULL;
+
+  - id: strict_success
+    type: io.kestra.plugin.core.debug.Return
+    format: "Strict cleaning succeeded for {{ inputs.file_name }}"
+
+# ---------------------------------------------------------
+# ATTEMPT 2: SOFT CLEANING (Flow-level errors block)
+# ---------------------------------------------------------
+errors:
+
+  - id: soft_cleaning_wrapper
+    type: io.kestra.plugin.core.flow.Sequential
+    tasks:
+
+    - id: fix_cleaning_soft
+      type: io.kestra.plugin.gcp.bigquery.Query
+      serviceAccount: "{{ secret('GCP_SERVICE_ACCOUNT') }}"
+      projectId: "{{ vars.project }}"
+      location: "{{ vars.location }}"
+      sql: |
+        CREATE OR REPLACE TABLE `{{ vars.project }}.{{ vars.dataset }}.fix_cleaning` AS
+        WITH cleaned AS (
+          SELECT
+            CAST(VendorID AS INT64) AS VendorID,
+            TIMESTAMP(tpep_pickup_datetime) AS tpep_pickup_datetime,
+            TIMESTAMP(tpep_dropoff_datetime) AS tpep_dropoff_datetime,
+
+            CASE
+              WHEN SAFE_CAST(passenger_count AS INT64) IS NULL THEN 1
+              ELSE SAFE_CAST(passenger_count AS INT64)
+            END AS passenger_count,
+
+            SAFE_CAST(trip_distance AS FLOAT64) AS trip_distance,
+            SAFE_CAST(total_amount AS FLOAT64) AS total_amount
+          FROM `{{ vars.project }}.{{ vars.dataset }}.raw_stage`
+        )
+        SELECT *
+        FROM cleaned
+        WHERE passenger_count IS NOT NULL;     
+      
+```
+
+
+
 
 
 
